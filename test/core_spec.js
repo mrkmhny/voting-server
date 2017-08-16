@@ -1,7 +1,9 @@
 import {List, Map, fromJS} from 'immutable';
 import {expect} from 'chai';
 
-import {setEntries, addVote, createPoll, editPoll, castVote, editQuestion, addChoice} from '../src/core';
+import {setEntries, addVote, createPoll,
+        editPoll, castVote, editQuestion,
+        addChoice, tallyFinalResults} from '../src/core';
 
 var establishedState = fromJS({
   polls: [
@@ -10,7 +12,7 @@ var establishedState = fromJS({
       q:"What's the best color?",
       choices:[
         {
-          choice:"blue",
+          choiceName:"blue",
           votes:[
             {
               voter:'markrmahoney',
@@ -73,7 +75,7 @@ describe('POLLS:', ()=> {
         polls: [
           {pollId:0},
           {pollId:1},
-          {pollId:2,choices:List()}
+          {pollId:2,choices:List(),votes:List()}
         ]
       }));
     })
@@ -98,7 +100,7 @@ describe('POLLS:', ()=> {
       expect(editQuestion(state,0,"Favorite color?")).to.equal(fromJS({
         polls: [
           {pollId:0, q:"Favorite color?"},
-          {pollId:1,q:"Best city?"}
+          {pollId:1, q:"Best city?"}
         ]
       }));
     })
@@ -112,8 +114,8 @@ describe('POLLS:', ()=> {
           pollId:1,
           q:"Best city?",
           choices:[
-            {choiceId: 0, choice:"NY"},
-            {chocieId: 1, choice:"LA"}
+            {choiceId: 0, choiceName:"NY"},
+            {choiceId: 1, choiceName:"LA"}
           ]
         }
       ]
@@ -124,15 +126,15 @@ describe('POLLS:', ()=> {
           {
             pollId:0,
             choices:[
-              {choiceId:0,choice:"New choice!"}
+              {choiceId:0,choiceName:"New choice!", tally:{}}
             ]
           },
           {
             pollId:1,
             q:"Best city?",
             choices:[
-              {choiceId: 0, choice:"NY"},
-              {chocieId: 1, choice:"LA"}
+              {choiceId: 0, choiceName:"NY"},
+              {choiceId: 1, choiceName:"LA"}
             ]
           }
         ]
@@ -140,7 +142,24 @@ describe('POLLS:', ()=> {
       }))
     })
     it('Adds a choice to an existing list of choices', () => {
+      expect(addChoice(state,1,"DC")).to.equal(fromJS({
+        polls:[
+          {
+            pollId:0,
+            choices:[]
+          },
+          {
+            pollId:1,
+            q:"Best city?",
+            choices:[
+              {choiceId: 0, choiceName:"NY"},
+              {choiceId: 1, choiceName:"LA"},
+              {choiceId: 2, choiceName:"DC", tally:{}}
+            ]
+          }
+        ]
 
+      }))
     })
   })
 /*
@@ -185,35 +204,42 @@ describe('POLLS:', ()=> {
 
 describe("VOTING",() => {
   describe("castVote()", () => {
-    it ("adds a new vote object to array of votes in poll",()=>{
+    it ("adds a new vote in the votes List",()=>{
       const state = fromJS({
         polls: [
-          {id:0},
-          {id:1},
+          {pollId:0},
+          {pollId:1},
           {
-            id:2,
-            q:"Who should be president?",
-            choices:["Mario","Luigi","Peach"],
-            votes:List()
+            pollId:2,
+            q:"Best city?",
+            choices:[
+              {choiceId: 0, choiceName:"NY", tally:{}},
+              {choiceId: 1, choiceName:"LA", tally:{}},
+              {choiceId: 2, choiceName:"DC", tally:{}}
+            ],
+            votes:[]
           }
         ]
       })
-      const vote = List(["Mario","Peach"]);
+      const vote = ["LA","DC"];
       const id = 2;
       const voter = 'mrkmhny';
       const nextState = castVote(state, id, voter, vote);
       expect(nextState).to.equal(fromJS({
         polls: [
-          {id:0},
-          {id:1},
+          {pollId:0},
+          {pollId:1},
           {
-            id:2,
-            q:"Who should be president?",
-            choices:["Mario","Luigi","Peach"],
-            votes:[{
-              voter:voter,
-              vote:vote
-            }]
+            pollId:2,
+            q:"Best city?",
+            choices:[
+              {choiceId: 0, choiceName:"NY", tally:{}},
+              {choiceId: 1, choiceName:"LA", tally:{}},
+              {choiceId: 2, choiceName:"DC", tally:{}}
+            ],
+            votes: [
+              {voteId:0, voter:'mrkmhny', voteOrder:["LA","DC"]}
+            ]
           }
         ]
       }))
@@ -222,8 +248,74 @@ describe("VOTING",() => {
 })
 
 describe("TALLYING",()=>{
-  describe("tallyResults()",()=>{
+  describe("tallyFinalResults()",()=>{
 
+    var state = fromJS({
+      polls:[
+        {pollId:0},
+        {pollId:1,
+        q:"Best city?",
+        choices:[
+          {choiceId: 0, choiceName:"NY", tally:[], eliminated:0},
+          {choiceId: 1, choiceName:"LA", tally:[], eliminated:0},
+          {choiceId: 2, choiceName:"DC", tally:[], eliminated:0},
+          {choiceId: 3, choiceName:"SF", tally:[], eliminated:0},
+          {choiceId: 4, choiceName:"BO", tally:[], eliminated:0}
+        ],
+        votes: [
+          // expected results
+          /*
+            NY: 40% -> +0
+            LA: 20% -> +10% from SF +10% from DC + 10% from BO
+            SF: 20% -> +10% from DC, eliminated 2nd round
+            DC: 10% -> eliminated 1st round
+            BO: 10% -> eliminated 1st round
+          */
+          {voteId:0, voteOrder:["SF","NY","LA"]}, // losing vote that won't reach end
+          {voteId:1, voteOrder:["NY","DC"]}, // winning vote that won't reach end
+          {voteId:2, voteOrder:["NY","SF"]},
+          {voteId:3, voteOrder:["NY","DC","LA"]},
+          {voteId:4, voteOrder:["NY"]}, // winning vote with no alts
+          {voteId:5, voteOrder:["BO"]}, // losing vote with no alts
+          {voteId:6, voteOrder:["LA","DC"]}, // winning vote with losing alts
+          {voteId:7, voteOrder:["DC","SF","LA"]}, // makes it third choice
+          {voteId:8, voteOrder:["LA","SF"]},
+          {voteId:9, voteOrder:["SF","LA","NY"]}
+
+        ]}
+      ]})
+      var pollId=1;
+
+    it("Should calculate the total for winner and runner up with 4 choices", () =>{
+      expect(tallyFinalResults(state,pollId)).to.equal(fromJS(
+        {
+          polls:[
+            {pollId:0},
+            {pollId:1,
+            q:"Best city?",
+            choices:[
+              {choiceId: 0, choiceName:"NY", tally:["NY","NY","NY","NY"], eliminated:3},
+              {choiceId: 1, choiceName:"LA", tally:["LA","LA"], eliminated:2},
+              {choiceId: 2, choiceName:"DC", tally:["DC"], eliminated:1},
+              {choiceId: 3, choiceName:"SF", tally:["SF","DC","LA","SF"], eliminated:3},
+              {choiceId: 4, choiceName:"BO", tally:["BO"], eliminated:1}
+            ],
+            votes: [
+              {voteId:0, voteOrder:["SF","NY","LA"]}, // losing vote that won't reach end
+              {voteId:1, voteOrder:["NY","DC"]}, // winning vote that won't reach end
+              {voteId:2, voteOrder:["NY","SF"]},
+              {voteId:3, voteOrder:["NY","DC","LA"]},
+              {voteId:4, voteOrder:["NY"]}, // winning vote with no alts
+              {voteId:5, voteOrder:["BO"]}, // losing vote with no alts
+              {voteId:6, voteOrder:["LA","DC"]}, // winning vote with losing alts
+              {voteId:7, voteOrder:["DC","SF","LA"]}, // makes it third choice
+              {voteId:8, voteOrder:["LA","SF"]},
+              {voteId:9, voteOrder:["SF","LA","NY"]}
+
+            ]}
+          ]}
+      ))
+    })
   })
 })
 
