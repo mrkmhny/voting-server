@@ -1,5 +1,9 @@
 import {List, Map, fromJS, toJS, findIndex} from 'immutable';
 
+// This should be pulled from a database
+export const INITIAL_STATE = fromJS({polls:[]});
+
+
 // test function
 export function setEntries(state,entries){
   return state.set('entries',List(entries));
@@ -50,10 +54,10 @@ export function addChoice(state,pollId,choice){
 
   return state.updateIn(['polls',pollId,"choices"],
     choices => choices.push(Map({
-        choiceId:state.get('polls').get(pollId).get('choices').size,
-        choiceName:choice,
-        tally:Map()
-      }))
+      choiceId:state.get('polls').get(pollId).get('choices').size,
+      choiceName:choice,
+      tally:Map()
+    }))
   )
 }
 // VOTING
@@ -72,7 +76,7 @@ export function castVote(state,pollId,voter,voteOrder){
 // Finding the final result
 export function tallyFinalResults(state,pollId){
 /***********************************************
-This is the main voting logic, and will be heavily commented for clarity
+This is the main tallying logic, and will be heavily commented for clarity
 There are some variations of IRV
 This implementation assumes:
 - Only 1 choice eliminated each round, unless there is a tie
